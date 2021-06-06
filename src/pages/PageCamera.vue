@@ -47,12 +47,15 @@
       <div class="row justify-center q-ma-md">
         <q-input
           v-model="post.location"
+          :loading = "locationLoading"
           placeholder="Location"
           class="col col-sm-6"
           dense
         >
           <template v-slot:append>
             <q-btn
+              v-if="!locationLoading && locationSupported"
+              @click="getLocation"
               icon="eva-navigation-2-outline"
               dense
               flat
@@ -90,7 +93,14 @@ export default {
       },
       imageCaptured: false,
       imageUpload: [],
-      hasCameraSupport: true
+      hasCameraSupport: true,
+      locationLoading: false
+    }
+  },
+  computed: {
+    locationSupported() {
+      if('geolocation' in navigator) return true
+      return false
     }
   },
   methods: {
@@ -160,6 +170,37 @@ export default {
       // write the ArrayBuffer to a blob, and you're done
       var blob = new Blob([ab], {type: mimeString});
       return blob;
+    },
+    getLocation() {
+      this.locationLoading = true
+      navigator.geolocation.getCurrentPosition(position => {
+        this.getCityAndCountry(position)
+      }, err => {
+        this.locationError()
+      }, { timeout: 7000 })
+    },
+    getCityAndCountry(position) {
+      let apiURL = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${ position.coords.latitude }&lon=${ position.coords.longitude }`
+      this.$axios.get(apiURL).then(result => {
+        console.log(result);
+        this.locationSuccess(result)
+      }).catch(err => {
+        this.locationError()
+      })
+    },
+    locationSuccess(result) {
+      this.post.location = result.data.address.city_district
+      if (result.data.address.country) {
+        this.post.location += `, ${result.data.address.country}`
+      }
+      this.locationLoading = false
+    },
+    locationError() {
+      this.$q.dialog({
+        title: 'Error',
+        message: 'Could not find your location'
+      })
+      this.locationLoading = false
     }
   },
   mounted() {
