@@ -18,6 +18,7 @@
       <q-btn
         v-if="hasCameraSupport"
         @click="captureImage"
+        :disable="imageCaptured"
         color="grey-10"
         icon="eva-camera"
         size="lg"
@@ -39,7 +40,7 @@
       <div class="row justify-center q-ma-md">
         <q-input
           v-model="post.caption"
-          placeholder="Caption"
+          placeholder="Caption *"
           class="col col-sm-6"
           dense
         />
@@ -47,12 +48,15 @@
       <div class="row justify-center q-ma-md">
         <q-input
           v-model="post.location"
+          :loading = "locationLoading"
           placeholder="Location"
           class="col col-sm-6"
           dense
         >
           <template v-slot:append>
             <q-btn
+              v-if="!locationLoading && locationSupported"
+              @click="getLocation"
               icon="eva-navigation-2-outline"
               dense
               flat
@@ -63,6 +67,8 @@
       </div>
       <div class="row justify-center q-mt-lg">
         <q-btn
+          @click="addPost"
+          :disable="!post.caption || !post.photo"
           color="primary"
           label="Post Image"
           rounded
@@ -90,7 +96,14 @@ export default {
       },
       imageCaptured: false,
       imageUpload: [],
-      hasCameraSupport: true
+      hasCameraSupport: true,
+      locationLoading: false
+    }
+  },
+  computed: {
+    locationSupported() {
+      if('geolocation' in navigator) return true
+      return false
     }
   },
   methods: {
@@ -160,6 +173,64 @@ export default {
       // write the ArrayBuffer to a blob, and you're done
       var blob = new Blob([ab], {type: mimeString});
       return blob;
+    },
+    getLocation() {
+      this.locationLoading = true
+      navigator.geolocation.getCurrentPosition(position => {
+        this.getCityAndCountry(position)
+      }, err => {
+        this.locationError()
+      }, { timeout: 7000 })
+    },
+    getCityAndCountry(position) {
+      let apiURL = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${ position.coords.latitude }&lon=${ position.coords.longitude }`
+      this.$axios.get(apiURL).then(result => {
+        console.log(result);
+        this.locationSuccess(result)
+      }).catch(err => {
+        this.locationError()
+      })
+    },
+    locationSuccess(result) {
+      this.post.location = result.data.address.city_district
+      if (result.data.address.country) {
+        this.post.location += `, ${result.data.address.country}`
+      }
+      this.locationLoading = false
+    },
+    locationError() {
+      this.$q.dialog({
+        title: 'Error',
+        message: 'Could not find your location'
+      })
+      this.locationLoading = false
+    },
+    addPost() {
+      this.$q.loading.show()
+      let formData = new FormData()
+      formData.append('id', this.post.id)
+      formData.append('caption', this.post.caption)
+      formData.append('location', this.post.location)
+      formData.append('date', this.post.date)
+      formData.append('file', this.post.photo, this.post.id + '.png')
+
+      this.$axios.post(`${ process.env.API }/createPost`, formData).then(response => {
+        console.log('reponse: ', response)
+        this.$router.push('/')
+        this.$q.notify({
+          message: 'Post created!',
+          actions: [
+            { label: 'Dismiss', color: 'white' }
+          ]
+        })
+        this.$q.loading.hide()
+      }).catch(err => {
+        this.$q.dialog({
+          title: 'Error',
+          message: 'Sorry, could not create post!'
+        })
+        this.$q.loading.hide()
+      })
     }
   },
   mounted() {
